@@ -4,6 +4,8 @@
 // @version      0.4
 // @description  JAVBUS自动显示预告片
 // @author       A9
+// @supportURL   https://sleazyfork.org/zh-CN/scripts/450740/feedback
+// @source       https://github.com/bigwolf9987/JavBusTrailer
 // @include      /^https?:\/\/(?:[A-Za-z0-9]+\.)*(?:javbus|busjav|busfan|fanbus|buscdn|cdnbus|dmmsee|seedmm|busdmm|dmmbus|javsee|seejav){1}(?:\.[A-Za-z0-9]+)?\/[\w_-]{1,}\/?$/
 // @exclude      /^https?:\/\/(?:[A-Za-z0-9]+\.)*(?:javbus|busjav|busfan|fanbus|buscdn|cdnbus|dmmsee|seedmm|busdmm|dmmbus|javsee|seejav){1}(?:\.[A-Za-z0-9]+)?\/(?:forum|actresses|uncensored|genre|series|studio|page){1,}\/?\S*$/
 // @grant        GM_xmlhttpRequest
