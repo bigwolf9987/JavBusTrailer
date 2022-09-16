@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JAVBUS影片预告
 // @namespace    http://tampermonkey.net/
-// @version      0.4
+// @version      0.5
 // @description  JAVBUS自动显示预告片
 // @author       A9
 // @supportURL   https://sleazyfork.org/zh-CN/scripts/450740/feedback
@@ -15,6 +15,7 @@
 // @connect      dmm.co.jp
 // @connect      javdb.com
 // @connect      mgstage.com
+// @connect      prestige-av.com
 // @connect      javspyl.tk
 // @connect      heyzo.com
 // @connect      avfantasy.com
@@ -103,9 +104,34 @@
     sdmm: ["1"],
     sdmua: ["1"],
     rebd: ["h_346"],
+    sdth: ["1"],
+    aran: [""],
+    aed: [""],
+    anb: [""],
+    cmv: [""],
+    piyo: ["1"],
+    rctd: ["1"],
+    fgan: ["h_1440", "00"],
+    zex: ["h_720"],
+    fera: ["h_086", "00"],
+    fuga: ["h_086", "00"],
+    mtall: ["1", "00"],
+    fsdss: ["1"],
+    ofku: ["h_254"],
+    nsfs: ["", "00"],
+    sdmu: ["1"],
+    sinn: [""],
+    hkd: [""],
+    rvg: [""],
+    scd: [""],
+    ktra: ["h_094", "00"],
+    jrze: ["h_086", "00"],
+    mesu: ["h_086", "00"],
+    akdl: ["1", "00"],
+    wo: ["1"],
+    sun: ["1"],
   };
   const need_cors_domain = new Set([
-    "my.cdn.tokyo-hot.com",
     "smovie.1pondo.tv",
     "dy43ylo5q3vt8.cloudfront.net",
   ]);
@@ -143,12 +169,7 @@
       document.querySelector("#navbar li.active")?.innerText === "無碼";
     let isEuropeOrAmerica =
       document.querySelector("#navbar li.active")?.innerText === "歐美";
-    let title = "";
-    if (corpName === "HEYZO") {
-      title = document.querySelector(".bigImage img")?.title.split(" ")[0];
-    } else {
-      title = document.querySelector(".bigImage img")?.title;
-    }
+    let title = document.querySelector(".bigImage img")?.title;
     log({ title, movieId, corpName, isVR, isUncensored, isEuropeOrAmerica });
     return { title, movieId, corpName, isVR, isUncensored, isEuropeOrAmerica };
   }
@@ -228,7 +249,7 @@
       </iframe>`;
     } else {
       video = `
-        <video id="preview-video-player" playsinline controls preload="none" crossorigin="anonymous">
+        <video id="preview-video-player" playsinline controls preload="none">
             <source src="${movieInfo.videoURL}" type="video/mp4" />
         </video>`;
       if (
@@ -344,10 +365,22 @@
 
   async function getVideoURL(movieInfo) {
     let videoURL = await queryDMMVideoURL(movieInfo)
-      .catch(() => queryR18VideoURL(movieInfo))
-      .catch(() => queryJavSpylVideoURL(movieInfo))
-      .catch(() => queryAVFantasyVideoURL(movieInfo))
-      .catch(() => queryJavDBVideoURL(movieInfo))
+      .catch((e) => {
+        log(e);
+        return queryR18VideoURL(movieInfo);
+      })
+      .catch((e) => {
+        log(e);
+        return queryJavSpylVideoURL(movieInfo);
+      })
+      .catch((e) => {
+        log(e);
+        return queryAVFantasyVideoURL(movieInfo);
+      })
+      .catch((e) => {
+        log(e);
+        return queryJavDBVideoURL(movieInfo);
+      })
       .catch((e) => {
         log(e);
       });
@@ -399,7 +432,12 @@
     let keyword = movieInfo.movieId;
     //Movie codes for these companies are not supported, so use movie titles to search.
     if (movieInfo.corpName === "HEYZO") {
-      keyword = movieInfo.title;
+      keyword = movieInfo.title
+        .split(" ")
+        .reduce(
+          (maxitem, item) => (item?.length > maxitem.length ? item : maxitem),
+          ""
+        );
     }
     let serverURL = `https://www.avfantasy.com/ppv/ppv_searchproducts.aspx?keyword=${keyword}`;
 
@@ -411,7 +449,7 @@
         if (!resultMovies) return notFound;
         let targetMovieEle = null;
         for (const element of resultMovies.values()) {
-          if (element.innerText.indexOf(movieInfo.title) != -1) {
+          if (element.innerText.indexOf(keyword) != -1) {
             targetMovieEle = element;
             break;
           }
