@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JAVBUS影片预告
 // @namespace    http://tampermonkey.net/
-// @version      0.6
+// @version      0.7
 // @description  JAVBUS自动显示预告片
 // @author       A9
 // @supportURL   https://sleazyfork.org/zh-CN/scripts/450740/feedback
@@ -40,6 +40,7 @@
   const settings = {
     enable_vr_mode: 1, //是否使用VR模式，0 关闭；1 开启
     enable_mute_play: 0, //是否开启静音播放，0 关闭；1 开启 （注：跨域页面无效，需手动控制播放与音量）
+    video_playback_speed: 1.0, //视频默认播放速度，建议设置范围 0.25～2.0（注：数值越大播放速度越快）
     enable_debug_mode: 0,
   };
   const corporations = {
@@ -288,7 +289,7 @@
               <video id="preview-video-player" class="video-js" playsinline controls preload="none" 
               ${muted} poster="${
           document.querySelector("a.bigImage img")?.src
-        }" data-setup='{}' crossorigin="anonymous">
+        }" crossorigin="anonymous">
               </video>`;
       }
     }
@@ -326,7 +327,9 @@
       videojs &&
       ((settings.enable_vr_mode == true && movieInfo.isVR) || isM3U8(movieInfo.videoURL))
     ) {
-      player = videojs("preview-video-player");
+      player = videojs("preview-video-player", {
+        playbackRates: [0.5, 1, 1.5, 2],
+      });
       player.mediainfo = player.mediainfo || {};
       if (isM3U8(movieInfo.videoURL)) {
         player.src({
@@ -349,8 +352,10 @@
         });
         player.tech(false); //tech() will log warning without any argument
       }
+      player.defaultPlaybackRate(settings.video_playback_speed);
     } else {
       player = document.querySelector("#preview-video-player");
+      player.playbackRate = settings.video_playback_speed;
     }
   }
 
