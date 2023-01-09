@@ -226,8 +226,8 @@
             pointer-events:none;
         }
         #preview-video-player{
-            width: 73%;
             height: 80%;
+            border-radius: 8px;
         }
         .preview-video-img-container{
             position: relative;
@@ -271,7 +271,7 @@
     if (needCORS(movieInfo.videoURL)) {
       let iframeSrc = movieInfo.videoURL;
       video = `
-      <iframe id="preview-video-iframe" name="preview-video-iframe" width="73%" height="80%" style="border:none;" src="${iframeSrc}">
+      <iframe id="preview-video-iframe" name="preview-video-iframe" height="80%" style="border:none;" src="${iframeSrc}">
       </iframe>`;
     } else {
       video = `
@@ -481,13 +481,13 @@
     //see https://bit.ly/3RkgqSo
     let serverURL =
       Date.now() % 2
-        ? "https://api1.javspyl.tk/javspyl.php"
-        : "https://api2.javspyl.tk/javspyl.php";
+        ? "https://api1.javspyl.tk/api.php"
+        : "https://api2.javspyl.tk/api.php";
     serverURL = serverURL + "?" + movieInfo.movieId;
 
-    return await fetch(serverURL)
+    return await xFetch(serverURL)
       .then((resp) => {
-        return resp.text();
+        return resp.responseText;
       })
       .then((videoURL) => {
         if (videoURL != "no" && videoURL.indexOf("\nno") === -1) {
@@ -621,6 +621,8 @@
         if (resp.ok) {
           log("DMM server result video url: " + videoURL);
           return videoURL;
+        }else{
+          return Promise.reject("DMM server not found movie.");
         }
       })
       .catch((e) => {
