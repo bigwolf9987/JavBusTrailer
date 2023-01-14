@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JAVBUS影片预告
 // @namespace    http://tampermonkey.net/
-// @version      0.8
+// @version      0.9
 // @description  JAVBUS自动显示预告片
 // @author       A9
 // @supportURL   https://sleazyfork.org/zh-CN/scripts/450740/feedback
@@ -11,6 +11,9 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @grant        GM_getResourceText
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_deleteValue
 // @connect      r18.com
 // @connect      dmm.co.jp
 // @connect      javdb.com
@@ -24,6 +27,7 @@
 // @connect      aventertainments.com
 // @connect      10musume.com
 // @connect      pacopacomama.com
+// @connect      1pondo.tv
 // @icon         data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABFElEQVQ4ja2TMU4CQRSGvzfuKkQ2bqORRpKNV6CjIaGgovQK1LRs7R24AoECbrAHWE7glhQkJO4SEgt1GQsCBhmG1fjKee//8v/zZiSGJ+AZeOR3lQChxPDyB/EeIjFo28SuKSf6jk0sjoPXaHDh+6yjiDzLjmaUDaDKZe77fR4GAy5rNaNVK2DnQlwXEXOIs4Bz9f8AU85TG4CfW1AKv93mul7ndTjkfT4HETSgN5sCAK256XS47XZRlQrrKOIqCMjTlDxNjU7UoV6TTSZ8Lpfc9XoEoxFutUo6HvOxWBgdHL1EcRy8ZhOv1UKVSrzNZmTTKflqVQwA2wOBbX6trZeo2P6qQ+p3JqsYSBQQmiAFKgHCL3I+UIXeDJynAAAAAElFTkSuQmCC
 // @require      https://fastly.jsdelivr.net/npm/video.js@7.10.2/dist/video.min.js
 // @require      https://fastly.jsdelivr.net/npm/videojs-vr@1.10.1/dist/videojs-vr.min.js
@@ -160,7 +164,10 @@
   if (movieInfo?.movieId && !movieInfo?.isEuropeOrAmerica) {
     addPreviewVideoStyle();
     getVideoURL(movieInfo).then((videoURL) => {
+      if (!videoURL) return;
       movieInfo.videoURL = videoURL;
+      //Save video url to local storage cache.
+      GM_setValue(movieInfo.movieId, videoURL);
       addVideoPlayerElement(movieInfo);
     });
   }
@@ -269,9 +276,8 @@
     let muted = settings.enable_mute_play == true ? "muted" : "";
     //target video url need use iframe
     if (needCORS(movieInfo.videoURL)) {
-      let iframeSrc = movieInfo.videoURL;
       video = `
-      <iframe id="preview-video-iframe" name="preview-video-iframe" height="80%" style="border:none;" src="${iframeSrc}">
+      <iframe id="preview-video-iframe" name="preview-video-iframe" width="60%" height="80%" style="border:none;border-radius:8px;" srcdoc="<html><head><style>*{width:100%;height:100%;padding:0;margin:0;overflow:hidden;} video{background: #000;}</style></head><body><video controls><source src='${movieInfo.videoURL}' type='video/mp4'></video></body></html>">
       </iframe>`;
     } else {
       video = `
@@ -398,11 +404,15 @@
   }
 
   async function getVideoURL(movieInfo) {
-    let videoURL = await queryDMMVideoURL(movieInfo)
+    let videoURL = await queryLocalCacheDB(movieInfo)
       .catch((e) => {
         log(e);
-        return queryJavSpylVideoURL(movieInfo);
+        return queryDMMVideoURL(movieInfo);
       })
+      // .catch((e) => {
+      //   log(e);
+      //   return queryJavSpylVideoURL(movieInfo);
+      // })
       .catch((e) => {
         log(e);
         return queryMGStageVideoURL(movieInfo);
@@ -433,40 +443,61 @@
     if (!movieInfo.isUncensored)
       return Promise.reject(
         "Query basic uncensored: This function only support uncensored movie."
-      );
-    let videoURL;
+      );    
+      let videoURLs;
+      const qualityArr = ["720p.mp4", "1080p.mp4", "480p.mp4", "360p.mp4", "240p.mp4"];
     if (
       movieInfo.corpName === "カリビアンコム" ||
       movieInfo.corpName === "Caribbeancom"
     ) {
-      videoURL = `https://smovie.caribbeancom.com/sample/movies/${movieInfo.movieId}/720p.mp4`;
+      //create different quality video urls.
+      videoURLs = qualityArr.map(
+        (quality) => `https://smovie.caribbeancom.com/sample/movies/${movieInfo.movieId}/${quality}`
+      );
     } else if (movieInfo.corpName === "東京熱" || movieInfo.corpName === "TokyoHot") {
-      videoURL = `https://my.cdn.tokyo-hot.com/media/samples/${movieInfo.movieId}.mp4`;
+      videoURLs = [`https://my.cdn.tokyo-hot.com/media/samples/${movieInfo.movieId}.mp4`];
     } else if (movieInfo.corpName === "天然むすめ" || movieInfo.corpName === "10musume") {
-      videoURL = `https://smovie.10musume.com/sample/movies/${movieInfo.movieId}/720p.mp4`;
+      videoURLs = qualityArr.map(
+        (quality) => `https://smovie.10musume.com/sample/movies/${movieInfo.movieId}/${quality}`
+      );
     } else if (movieInfo.corpName === "一本道" || movieInfo.corpName === "1pondo") {
-      videoURL = `https://ppvclips02.aventertainments.com/01m3u8/1pon_${movieInfo.movieId}/1pon_${movieInfo.movieId}.m3u8`;
+      videoURLs = qualityArr.map(
+        (quality) => `https://smovie.1pondo.tv/sample/movies/${movieInfo.movieId}/${quality}`
+      );
+      videoURLs.push(
+        `https://ppvclips02.aventertainments.com/01m3u8/1pon_${movieInfo.movieId}/1pon_${movieInfo.movieId}.m3u8`
+      );
     } else if (
       movieInfo.corpName === "パコパコママ" ||
       movieInfo.corpName === "pacopacomama"
     ) {
-      videoURL = `https://fms.pacopacomama.com/hls/sample/pacopacomama.com/${movieInfo.movieId}/720p.mp4`;
+      videoURLs = qualityArr.map(
+        (quality) =>
+          `https://fms.pacopacomama.com/hls/sample/pacopacomama.com/${movieInfo.movieId}/${quality}`
+      );
     } else {
       return Promise.reject(
         "Query basic uncensored: This function not support this corporation movie."
       );
     }
-    return await xFetch(videoURL, { method: "head" })
-      .then((resp) => {
-        if (resp?.status === 200) {
-          log("Query basic uncensored: server result video url: " + videoURL);
-          return videoURL;
-        }
-        return Promise.reject("Query basic uncensored: Not found movie.");
-      })
-      .catch((e) => {
-        return Promise.reject(e);
-      });
+    for (const videoURL of videoURLs) {
+      const validatedURL = await xFetch(videoURL, { method: "head" })
+        .then((resp) => {
+          if (resp?.status === 200) {
+            log("Query basic uncensored: server result video url: " + videoURL);
+            return videoURL;
+          }
+          return null;
+        })
+        .catch((e) => {
+          log(e);
+          return null;
+        });
+      if (validatedURL) {
+        return Promise.resolve(validatedURL);
+      }
+    }
+    return Promise.reject("Query basic uncensored: Not found movie.");
   }
 
   async function queryJavSpylVideoURL(movieInfo) {
@@ -621,7 +652,7 @@
         if (resp.ok) {
           log("DMM server result video url: " + videoURL);
           return videoURL;
-        }else{
+        } else {
           return Promise.reject("DMM server not found movie.");
         }
       })
@@ -717,6 +748,26 @@
           return videoSource.src;
         }
         return notFound;
+      })
+      .catch((e) => {
+        return Promise.reject(e);
+      });
+  }
+
+  async function queryLocalCacheDB(movieInfo) {
+    let videoSource = GM_getValue(movieInfo.movieId, null);
+    if (!videoSource) {
+      return Promise.reject("Local cache storage not found movie.");
+    }
+    return await xFetch(videoSource, { method: "head" })
+      .then((resp) => {
+        if (resp?.status === 200) {
+          log("The video source URL validate successful. Video source: " + videoSource);
+          return Promise.resolve(videoSource);
+        }
+        //If validation fails,remove the url from the local cache.
+        GM_deleteValue(movieInfo.movieId);
+        return Promise.reject("The video source URL validate failed. Not found movie.");
       })
       .catch((e) => {
         return Promise.reject(e);
