@@ -1,11 +1,12 @@
 // ==UserScript==
 // @name         JAVBUS影片预告
 // @namespace    http://tampermonkey.net/
-// @version      0.9
+// @version      1.0
 // @description  JAVBUS自动显示预告片
 // @author       A9
 // @supportURL   https://sleazyfork.org/zh-CN/scripts/450740/feedback
 // @source       https://github.com/bigwolf9987/JavBusTrailer
+// @match        https://www.javbus.com/
 // @include      /^https?:\/\/(?:[A-Za-z0-9]+\.)*(?:javbus|busjav|busfan|fanbus|buscdn|cdnbus|dmmsee|seedmm|busdmm|dmmbus|javsee|seejav){1}(?:\.[A-Za-z0-9]+)?\/[\w_-]{1,}\/?$/
 // @exclude      /^https?:\/\/(?:[A-Za-z0-9]+\.)*(?:javbus|busjav|busfan|fanbus|buscdn|cdnbus|dmmsee|seedmm|busdmm|dmmbus|javsee|seejav){1}(?:\.[A-Za-z0-9]+)?\/(?:forum|actresses|uncensored|genre|series|studio|page){1,}\/?\S*$/
 // @grant        GM_xmlhttpRequest
@@ -28,6 +29,7 @@
 // @connect      10musume.com
 // @connect      pacopacomama.com
 // @connect      1pondo.tv
+// @connect      cloudfront.net
 // @icon         data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABFElEQVQ4ja2TMU4CQRSGvzfuKkQ2bqORRpKNV6CjIaGgovQK1LRs7R24AoECbrAHWE7glhQkJO4SEgt1GQsCBhmG1fjKee//8v/zZiSGJ+AZeOR3lQChxPDyB/EeIjFo28SuKSf6jk0sjoPXaHDh+6yjiDzLjmaUDaDKZe77fR4GAy5rNaNVK2DnQlwXEXOIs4Bz9f8AU85TG4CfW1AKv93mul7ndTjkfT4HETSgN5sCAK256XS47XZRlQrrKOIqCMjTlDxNjU7UoV6TTSZ8Lpfc9XoEoxFutUo6HvOxWBgdHL1EcRy8ZhOv1UKVSrzNZmTTKflqVQwA2wOBbX6trZeo2P6qQ+p3JqsYSBQQmiAFKgHCL3I+UIXeDJynAAAAAElFTkSuQmCC
 // @require      https://fastly.jsdelivr.net/npm/video.js@7.10.2/dist/video.min.js
 // @require      https://fastly.jsdelivr.net/npm/videojs-vr@1.10.1/dist/videojs-vr.min.js
@@ -150,6 +152,7 @@
     focs: [""],
     tppn: [""],
     abw: ["118"],
+    pkpd: [""],
   };
   const need_cors_domain = new Set(["smovie.1pondo.tv", "dy43ylo5q3vt8.cloudfront.net"]);
   DOMPurify.setConfig({
@@ -234,7 +237,10 @@
         }
         #preview-video-player{
             height: 80%;
+            min-width: 79%;
+            background-color: #000;
             border-radius: 8px;
+            outline: none;
         }
         .preview-video-img-container{
             position: relative;
@@ -398,7 +404,10 @@
       if (vContainer) {
         document.body.style.overflow = "hidden";
         vContainer.style.display = "flex";
-        if (player) player.play();
+        if (player) {
+          player.play();
+          player.focus();
+        }
       }
     });
   }
@@ -409,10 +418,10 @@
         log(e);
         return queryDMMVideoURL(movieInfo);
       })
-      // .catch((e) => {
-      //   log(e);
-      //   return queryJavSpylVideoURL(movieInfo);
-      // })
+      .catch((e) => {
+        log(e);
+        return queryJavSpylVideoURL(movieInfo);
+      })
       .catch((e) => {
         log(e);
         return queryMGStageVideoURL(movieInfo);
@@ -429,10 +438,10 @@
         log(e);
         return queryAVFantasyVideoURL(movieInfo);
       })
-      .catch((e) => {
-        log(e);
-        return queryJavDBVideoURL(movieInfo);
-      })
+      // .catch((e) => {
+      //   log(e);
+      //   return queryJavDBVideoURL(movieInfo);
+      // })
       .catch((e) => {
         log(e);
       });
@@ -443,26 +452,29 @@
     if (!movieInfo.isUncensored)
       return Promise.reject(
         "Query basic uncensored: This function only support uncensored movie."
-      );    
-      let videoURLs;
-      const qualityArr = ["720p.mp4", "1080p.mp4", "480p.mp4", "360p.mp4", "240p.mp4"];
+      );
+    let videoURLs;
+    const qualityArr = ["720p.mp4", "1080p.mp4", "480p.mp4", "360p.mp4", "240p.mp4"];
     if (
       movieInfo.corpName === "カリビアンコム" ||
       movieInfo.corpName === "Caribbeancom"
     ) {
       //create different quality video urls.
       videoURLs = qualityArr.map(
-        (quality) => `https://smovie.caribbeancom.com/sample/movies/${movieInfo.movieId}/${quality}`
+        (quality) =>
+          `https://smovie.caribbeancom.com/sample/movies/${movieInfo.movieId}/${quality}`
       );
     } else if (movieInfo.corpName === "東京熱" || movieInfo.corpName === "TokyoHot") {
       videoURLs = [`https://my.cdn.tokyo-hot.com/media/samples/${movieInfo.movieId}.mp4`];
     } else if (movieInfo.corpName === "天然むすめ" || movieInfo.corpName === "10musume") {
       videoURLs = qualityArr.map(
-        (quality) => `https://smovie.10musume.com/sample/movies/${movieInfo.movieId}/${quality}`
+        (quality) =>
+          `https://smovie.10musume.com/sample/movies/${movieInfo.movieId}/${quality}`
       );
     } else if (movieInfo.corpName === "一本道" || movieInfo.corpName === "1pondo") {
       videoURLs = qualityArr.map(
-        (quality) => `https://smovie.1pondo.tv/sample/movies/${movieInfo.movieId}/${quality}`
+        (quality) =>
+          `https://smovie.1pondo.tv/sample/movies/${movieInfo.movieId}/${quality}`
       );
       videoURLs.push(
         `https://ppvclips02.aventertainments.com/01m3u8/1pon_${movieInfo.movieId}/1pon_${movieInfo.movieId}.m3u8`
@@ -510,20 +522,15 @@
     //   return Promise.reject("JavSpyl server not support this corporation movie.");
     // }
     //see https://bit.ly/3RkgqSo
-    let serverURL =
-      Date.now() % 2
-        ? "https://api1.javspyl.tk/api.php"
-        : "https://api2.javspyl.tk/api.php";
-    serverURL = serverURL + "?" + movieInfo.movieId;
-
-    return await xFetch(serverURL)
+    let serverURL = "https://api1.javspyl.tk/api/?" + movieInfo.movieId;
+    return await xFetch(serverURL, { headers: { origin: "https://javspyl.tk" } })
       .then((resp) => {
-        return resp.responseText;
+        return JSON.parse(resp.responseText);
       })
-      .then((videoURL) => {
-        if (videoURL != "no" && videoURL.indexOf("\nno") === -1) {
-          log("JavSpyl server result video url: https://" + videoURL);
-          return "https://" + videoURL;
+      .then((video) => {
+        if (video?.info?.url.length > 0) {
+          log("JavSpyl server result video url: https://" + video.info.url);
+          return "https://" + video.info.url;
         } else {
           return Promise.reject("JavSpyl server not found movie.");
         }
