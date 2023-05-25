@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JAVBUS影片预告
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  JAVBUS自动显示预告片
 // @author       A9
 // @supportURL   https://sleazyfork.org/zh-CN/scripts/450740/feedback
@@ -48,6 +48,7 @@
     enable_mute_play: 0, //是否开启静音播放，0 关闭；1 开启 （注：跨域页面无效，需手动控制播放与音量）
     video_playback_speed: 1.0, //视频默认播放速度，建议设置范围 0.25～2.0（注：数值越大播放速度越快）
     enable_debug_mode: 0,
+    video_quality: 720, //视频清晰度,可设置为下列值之一：1080；720；480；360；240；（注：数值越大越清晰，所需网络加载时间越长）
   };
   const corporations = {
     stars: ["1"],
@@ -153,6 +154,10 @@
     tppn: [""],
     abw: ["118"],
     pkpd: [""],
+    adn: ["", "00"],
+    wkd: ["2", "00"],
+    aarm: [""],
+    sqte: [""],
   };
   const need_cors_domain = new Set(["smovie.1pondo.tv", "dy43ylo5q3vt8.cloudfront.net"]);
   DOMPurify.setConfig({
@@ -412,6 +417,8 @@
     });
   }
 
+  //TODO 增加一个解析源：https://www.sokmil.com/av/_item/item404952.htm
+  // https://p-haul-dl.sby.candl.jp/c-porter02.sby/download/?a=ZkHfoZd2T4JYzT8FEqYOD8e7YT1vqw58SCl8nuzCEVbBIHl0GgxrbOHhjK9dRROMVnUUbSj-Yr6sKWo.BzLvWy4DZg0goPTbyst1a.aYWW1mC6M.iNXk.8t9LOhGr78n-4igxH3r1zN2MLirYPa69Q&h=104&f=knb0281_99_smp2m.mp4
   async function getVideoURL(movieInfo) {
     let videoURL = await queryLocalCacheDB(movieInfo)
       .catch((e) => {
@@ -522,8 +529,15 @@
     //   return Promise.reject("JavSpyl server not support this corporation movie.");
     // }
     //see https://bit.ly/3RkgqSo
-    let serverURL = "https://api1.javspyl.tk/api/?" + movieInfo.movieId;
-    return await xFetch(serverURL, { headers: { origin: "https://javspyl.tk" } })
+    let serverURL = "https://v2.javspyl.tk/api/";
+    return await xFetch(serverURL, {
+      headers: {
+        origin: "https://v2.javspyl.tk",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      data: `ID=${movieInfo.movieId}`,
+      method: "POST",
+    })
       .then((resp) => {
         return JSON.parse(resp.responseText);
       })
@@ -670,23 +684,20 @@
 
   async function queryMGStageVideoURL(movieInfo) {
     if (
-      movieInfo.corpName != "プレステージ" ||
-      movieInfo.corpName.toUpperCase() != "PRESTIGE" ||
+      // movieInfo.corpName != "プレステージ" ||
+      // movieInfo.corpName.toUpperCase() != "PRESTIGE" ||
       movieInfo.isUncensored
     )
       return Promise.reject(
         `MGStage server not support movieId: ${movieInfo.movieId}, CorpName: ${movieInfo.corpName}`
       );
-    let notFound = Promise.reject("MGStage server not found movie.");
+    let notFound = () => Promise.reject("MGStage server not found movie.");
     //Need ladder
-    let serverURL = `https://www.mgstage.com/search/cSearch.php?search_word=${movieInfo.movieId}&list_cnt=30`;
-    return await fetch(serverURL)
+    let serverURL = `https://www.mgstage.com/search/cSearch.php?search_word=${movieInfo.title}&list_cnt=30`;
+    return await xFetch(serverURL)
       .then((resp) => {
-        return resp.text();
-      })
-      .then((text) => {
         //MGStage search result, may contain multiple movies.
-        let doc = convertTextToDOM(text);
+        let doc = convertTextToDOM(resp.responseText);
         let resultMovies = doc.querySelectorAll(".rank_list li");
         let targetMovieEle = null;
         for (const element of resultMovies.values()) {
@@ -695,23 +706,22 @@
             break;
           }
         }
-        if (!targetMovieEle) return notFound;
+        if (!targetMovieEle) return notFound();
         let avDetailPathName = targetMovieEle.querySelector(".button_sample")?.pathname;
-        if (!avDetailPathName) return notFound;
+        if (!avDetailPathName) return notFound();
         let pid = avDetailPathName.split("/").at(-1);
-        return fetch("https://www.mgstage.com/sampleplayer/sampleRespons.php?pid=" + pid);
+        return xFetch(
+          "https://www.mgstage.com/sampleplayer/sampleRespons.php?pid=" + pid
+        );
       })
       .then((avDetailResp) => {
-        return avDetailResp.json();
-      })
-      .then((bodyObj) => {
         //MGStage movie detail page result.
-        let videoURL = bodyObj?.url.split(".ism")[0] + ".mp4";
+        let videoURL = JSON.parse(avDetailResp.response)?.url?.split(".ism")[0] + ".mp4";
         if (videoURL) {
-          log("MGStage server result video url: " + videoSource.src);
+          log("MGStage server result video url: " + videoURL);
           return videoURL;
         }
-        return notFound;
+        return notFound();
       })
       .catch((e) => {
         return Promise.reject(e);
@@ -783,12 +793,13 @@
 
   async function xFetch(url, fetchInit = {}) {
     const defaultFetchInit = { method: "get" };
-    const { headers, method } = { ...defaultFetchInit, ...fetchInit };
+    const { headers, method, data } = { ...defaultFetchInit, ...fetchInit };
     return new Promise((resolve, reject) => {
       void GM_xmlhttpRequest({
         url,
         method,
         headers,
+        data,
         onerror: reject,
         onload: async (response) => resolve(response),
       });
