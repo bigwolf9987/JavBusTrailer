@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JAVBUS影片预告
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  JAVBUS自动显示预告片
 // @author       A9
 // @supportURL   https://sleazyfork.org/zh-CN/scripts/450740/feedback
@@ -590,10 +590,10 @@
     //   return Promise.reject("JavSpyl server not support this corporation movie.");
     // }
     //see https://bit.ly/3RkgqSo
-    let serverURL = "https://v2.javspyl.tk/api/";
+    let serverURL = "https://api.javspyl.eu.org/api/";
     return await xFetch(serverURL, {
       headers: {
-        origin: "https://v2.javspyl.tk",
+        origin: "https://api.javspyl.eu.org",
         "Content-Type": "application/x-www-form-urlencoded",
       },
       data: `ID=${movieInfo.movieId}`,
@@ -767,9 +767,13 @@
 
     log("DMM server query:\r\n" + videoURL);
 
-    return await fetch(videoURL, {
+    return await xFetch(videoURL, {
       method: "head",
-      referrerPolicy: "no-referrer",
+      headers: {
+        "accept-language": "ja-JP",
+        "cookie": "age_check_done=1;",
+        "referrer-policy": "no-referrer",
+      },
     })
       .then((resp) => {
         if (resp.ok) {
@@ -940,12 +944,16 @@
 
   async function xFetch(url, fetchInit = {}) {
     const defaultFetchInit = { method: "get" };
-    const { headers, method, data } = { ...defaultFetchInit, ...fetchInit };
+    const { headers, method, data, referrerPolicy } = {
+      ...defaultFetchInit,
+      ...fetchInit,
+    };
     return new Promise((resolve, reject) => {
       void GM_xmlhttpRequest({
         url,
         method,
         headers,
+        referrerPolicy,
         data,
         onerror: reject,
         onload: async (response) => resolve(response),
@@ -986,7 +994,7 @@
     }
     return url;
   }
-  
+
   function matchMovieByKeyword(str, movieInfo) {
     if (str.indexOf(movieInfo.movieId) != -1 || str.indexOf(movieInfo.title) != -1) {
       return true;
