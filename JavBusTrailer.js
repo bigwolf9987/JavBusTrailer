@@ -20,7 +20,7 @@
 // @connect      javdb.com
 // @connect      mgstage.com
 // @connect      prestige-av.com
-// @connect      javspyl.tk
+// @connect      javspyl.eu.org
 // @connect      heyzo.com
 // @connect      avfantasy.com
 // @connect      tokyo-hot.com
@@ -771,7 +771,7 @@
       method: "head",
       headers: {
         "accept-language": "ja-JP",
-        "cookie": "age_check_done=1;",
+        cookie: "age_check_done=1;",
         "referrer-policy": "no-referrer",
       },
     })
