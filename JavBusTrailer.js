@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JAVBUS影片预告
 // @namespace    http://tampermonkey.net/
-// @version      1.3.1
+// @version      1.4
 // @description  JAVBUS自动显示预告片
 // @author       A9
 // @supportURL   https://sleazyfork.org/zh-CN/scripts/450740/feedback
@@ -37,6 +37,8 @@
 // @resource     video-js-css https://fastly.jsdelivr.net/npm/video.js@7.10.2/dist/video-js.min.css
 // @resource     video-vr-js-css https://fastly.jsdelivr.net/npm/videojs-vr@1.10.1/dist/videojs-vr.css
 // @license      MIT
+// @downloadURL https://update.sleazyfork.org/scripts/450740/JAVBUS%E5%BD%B1%E7%89%87%E9%A2%84%E5%91%8A.user.js
+// @updateURL https://update.sleazyfork.org/scripts/450740/JAVBUS%E5%BD%B1%E7%89%87%E9%A2%84%E5%91%8A.meta.js
 // ==/UserScript==
 
 (function () {
@@ -457,6 +459,10 @@
     let videoURL = await queryLocalCacheDB(movieInfo)
       .catch((e) => {
         log(e);
+        return queryDMMOfficialVideoURL(movieInfo);
+      })
+      .catch((e) => {
+        log(e);
         return queryDMMVideoURL(movieInfo);
       })
       .catch((e) => {
@@ -776,12 +782,81 @@
       },
     })
       .then((resp) => {
-        if (resp.ok) {
+        if (resp.ok || resp.status === 200) {
           log("DMM server result video url: " + videoURL);
           return videoURL;
         } else {
           return Promise.reject("DMM server not found movie.");
         }
+      })
+      .catch((e) => {
+        return Promise.reject(e);
+      });
+  }
+
+  async function queryDMMOfficialVideoURL(movieInfo, isUseTitle = false) {
+    if (movieInfo.isUncensored)
+      return Promise.reject("DMM Official server not support uncensored movie.");
+    if (movieInfo.thumbnailURL?.includes("mgstage.com"))
+      return Promise.reject("DMM Official server not support MGStage movie.");
+
+    let notFound = () => Promise.reject("DMM Official server not found movie.");
+    //Need ladder
+    let keyword = isUseTitle ? movieInfo.titleKeyPhrase : movieInfo.movieId;
+    const host = "https://www.dmm.co.jp";
+    let serverURL = `${host}/search/=/searchstr=${keyword}/limit=3/sort=rankprofile/`;
+    log("DMM Official query:\r\n" + serverURL);
+    const headers = {
+      "accept-language": "ja-JP",
+      cookie: "age_check_done=1;",
+      "referrer-policy": "no-referrer",
+    };
+    return await xFetch(serverURL, {
+      headers: headers,
+    })
+      .then((resp) => {
+        //DMM Official search result, may contain multiple movies.
+        let doc = convertTextToDOM(resp.responseText);
+        let resultMovies = doc.querySelectorAll("#main-src #list li");
+        let targetMovieEle = null;
+        for (const element of resultMovies.values()) {
+          if (matchMovieByKeyword(element.innerHTML, movieInfo)) {
+            targetMovieEle = element;
+            break;
+          }
+        }
+        if (!targetMovieEle) return notFound();
+        let avDetailURL = targetMovieEle.querySelector(".tmb a")?.href;
+        if (!avDetailURL) return notFound();
+        return xFetch(avDetailURL, {
+          headers: headers,
+        });
+      })
+      .then((avDetailResp) => {
+        let doc = convertTextToDOM(avDetailResp.responseText);
+        let videoIframeURL = doc
+          .querySelector("#detail-sample-movie a[data-video-url]")
+          ?.getAttribute("data-video-url");
+        if (!videoIframeURL) {
+          return notFound();
+        }
+        return xFetch(host + videoIframeURL, headers);
+      })
+      .then((videoFrameResp) => {
+        let iframeURL = videoFrameResp.responseText.match(/src="(\S*?)"/)?.at(1);
+        if (!iframeURL) return notFound();
+        return xFetch(iframeURL, headers);
+      })
+      .then((videoResp) => {
+        let videoURL = videoResp.responseText.match(/args.*?src":"(.*?)"/)?.at(1);
+        //TODO get different quality
+        // bitrate.*?720.*?src":"(.*?)"
+        if (videoURL) {
+          videoURL = "https:" + videoURL.replaceAll("\\", "");
+          log("DMM Official server result video url: " + videoURL);
+          return videoURL;
+        }
+        return notFound();
       })
       .catch((e) => {
         return Promise.reject(e);
