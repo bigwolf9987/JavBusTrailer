@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JAVBUS影片预告
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      1.4.1
 // @description  JAVBUS自动显示预告片
 // @author       A9
 // @supportURL   https://sleazyfork.org/zh-CN/scripts/450740/feedback
@@ -802,7 +802,9 @@
 
     let notFound = () => Promise.reject("DMM Official server not found movie.");
     //Need ladder
-    let keyword = isUseTitle ? movieInfo.titleKeyPhrase : movieInfo.movieId;
+    let keyword = isUseTitle
+      ? movieInfo.titleKeyPhrase
+      : movieInfo.movieId.replaceAll("-", " ");
     const host = "https://www.dmm.co.jp";
     let serverURL = `${host}/search/=/searchstr=${keyword}/limit=3/sort=rankprofile/`;
     log("DMM Official query:\r\n" + serverURL);
@@ -828,18 +830,23 @@
         if (!targetMovieEle) return notFound();
         let avDetailURL = targetMovieEle.querySelector(".tmb a")?.href;
         if (!avDetailURL) return notFound();
-        return xFetch(avDetailURL, {
+        //remove unuse params
+        return xFetch(avDetailURL.split("?")[0], {
           headers: headers,
         });
       })
       .then((avDetailResp) => {
-        let doc = convertTextToDOM(avDetailResp.responseText);
-        let videoIframeURL = doc
-          .querySelector("#detail-sample-movie a[data-video-url]")
-          ?.getAttribute("data-video-url");
+        //Different link format, get twice.
+        let videoIframeURL = avDetailResp.responseText
+          .match(/data-video-url="(\S*?)"/)
+          ?.at(1);
         if (!videoIframeURL) {
-          return notFound();
+          //try again
+          videoIframeURL = avDetailResp.responseText
+            .match(/sampleplay\('(\S*?)'\)/)
+            ?.at(1);
         }
+        if (!videoIframeURL) return notFound();
         return xFetch(host + videoIframeURL, headers);
       })
       .then((videoFrameResp) => {
