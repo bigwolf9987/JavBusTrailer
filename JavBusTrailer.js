@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JAVBUS影片预告
 // @namespace    http://tampermonkey.net/
-// @version      1.4.1
+// @version      1.5
 // @description  JAVBUS自动显示预告片
 // @author       A9
 // @supportURL   https://sleazyfork.org/zh-CN/scripts/450740/feedback
@@ -30,6 +30,7 @@
 // @connect      pacopacomama.com
 // @connect      1pondo.tv
 // @connect      cloudfront.net
+// @connect      workers.dev
 // @icon         data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABFElEQVQ4ja2TMU4CQRSGvzfuKkQ2bqORRpKNV6CjIaGgovQK1LRs7R24AoECbrAHWE7glhQkJO4SEgt1GQsCBhmG1fjKee//8v/zZiSGJ+AZeOR3lQChxPDyB/EeIjFo28SuKSf6jk0sjoPXaHDh+6yjiDzLjmaUDaDKZe77fR4GAy5rNaNVK2DnQlwXEXOIs4Bz9f8AU85TG4CfW1AKv93mul7ndTjkfT4HETSgN5sCAK256XS47XZRlQrrKOIqCMjTlDxNjU7UoV6TTSZ8Lpfc9XoEoxFutUo6HvOxWBgdHL1EcRy8ZhOv1UKVSrzNZmTTKflqVQwA2wOBbX6trZeo2P6qQ+p3JqsYSBQQmiAFKgHCL3I+UIXeDJynAAAAAElFTkSuQmCC
 // @require      https://fastly.jsdelivr.net/npm/video.js@7.10.2/dist/video.min.js
 // @require      https://fastly.jsdelivr.net/npm/videojs-vr@1.10.1/dist/videojs-vr.min.js
@@ -184,6 +185,7 @@
   const movieInfo = getMovieInfo();
   if (movieInfo?.movieId && !movieInfo?.isEuropeOrAmerica) {
     addPreviewVideoStyle();
+    log(JSON.stringify(movieInfo));
     getVideoURL(movieInfo).then((videoURL) => {
       if (!videoURL) return;
       movieInfo.videoURL = videoURL;
@@ -459,7 +461,11 @@
     let videoURL = await queryLocalCacheDB(movieInfo)
       .catch((e) => {
         log(e);
-        return queryDMMOfficialVideoURL(movieInfo);
+        return queryCF(movieInfo);
+      })
+      .catch((e) => {
+        log(e);
+        return queryDMMVideoURL(movieInfo, undefined, false, "mhb");
       })
       .catch((e) => {
         log(e);
@@ -480,6 +486,10 @@
       .catch((e) => {
         log(e);
         return queryMGStageVideoURL(movieInfo);
+      })
+      .catch((e) => {
+        log(e);
+        return queryMGStageVideoURL(movieInfo, false, true);
       })
       .catch((e) => {
         log(e);
@@ -624,7 +634,7 @@
   async function queryAVFantasyVideoURL(movieInfo, isStandbyServer = false) {
     if (!movieInfo.isUncensored)
       return Promise.reject("AVFantasyDMM server only support uncensored movie.");
-    let notFound = Promise.reject("AVFantasy server not found movie.");
+    let notFound = () => Promise.reject("AVFantasy server not found movie.");
     let keyword = movieInfo.movieId;
     //Movie codes for these companies are not supported, so use movie titles to search.
     if (movieInfo.corpName === "HEYZO") {
@@ -640,7 +650,7 @@
         //AVFantasy search result, may contain multiple movies.
         let doc = convertTextToDOM(response.responseText);
         let resultMovies = doc.querySelectorAll(".single-slider-product");
-        if (!resultMovies) return notFound;
+        if (!resultMovies) return notFound();
         let targetMovieEle = null;
         for (const element of resultMovies.values()) {
           if (matchMovieByKeyword(element.innerHTML, movieInfo)) {
@@ -648,9 +658,9 @@
             break;
           }
         }
-        if (!targetMovieEle) return notFound;
+        if (!targetMovieEle) return notFound();
         let movieDetailPathName = targetMovieEle.querySelector("a")?.href;
-        if (!movieDetailPathName) return notFound;
+        if (!movieDetailPathName) return notFound();
         return xFetch(movieDetailPathName);
       })
       .then((response) => {
@@ -661,7 +671,7 @@
           log("AVFantasy server result video url: " + videoSource.src);
           return videoSource.src;
         }
-        return notFound;
+        return notFound();
       })
       .catch((e) => {
         return Promise.reject(e);
@@ -670,7 +680,7 @@
 
   async function queryJavDBVideoURL(movieInfo) {
     let serverURL = `https://javdb.com/search?q=${movieInfo.movieId}&f=all`;
-    let notFound = Promise.reject("JavDB server not found movie.");
+    let notFound = () => Promise.reject("JavDB server not found movie.");
     log("JavDB server query:\r\n" + serverURL);
     return await fetch(serverURL)
       .then((resp) => {
@@ -687,9 +697,9 @@
             break;
           }
         }
-        if (!targetMovieEle) return notFound;
+        if (!targetMovieEle) return notFound();
         let avDetailPathName = targetMovieEle.querySelector("a")?.pathname;
-        if (!avDetailPathName) return notFound;
+        if (!avDetailPathName) return notFound();
         return fetch("https://javdb.com" + avDetailPathName);
       })
       .then((avDetailResp) => {
@@ -703,7 +713,7 @@
           log("JavDB server result video url: " + videoSource.src);
           return videoSource.src;
         }
-        return notFound;
+        return notFound();
       })
       .catch((e) => {
         return Promise.reject(e);
@@ -713,7 +723,8 @@
   async function queryDMMVideoURL(
     movieInfo,
     host = "cc3001.dmm.co.jp",
-    hasPrefix = false
+    hasPrefix = false,
+    postfix = "_dmb_w"
   ) {
     if (movieInfo.isUncensored)
       return Promise.reject("DMM server not support uncensored movie.");
@@ -723,7 +734,7 @@
     //see https://bit.ly/3wXLj6T
     let infix = "litevideo/freepv";
     //1500kbps = _dmb_w || 3000kbps = _mhb_w || vrlite || _sm_w.mp4 || _dm_w.mp4 || _dmb_s.mp4!!
-    let postfix = "_dmb_w";
+    // let postfix = "_dmb_w";
     if (movieInfo.isVR) {
       postfix = "vrlite";
       infix = "vrsample";
@@ -870,7 +881,11 @@
       });
   }
 
-  async function queryMGStageVideoURL(movieInfo, isUseTitle = false) {
+  async function queryMGStageVideoURL(
+    movieInfo,
+    isUseTitle = false,
+    isUseThumbnail = false
+  ) {
     if (
       movieInfo.isUncensored ||
       (movieInfo.corpName.includes("プレステージ") === false &&
@@ -883,8 +898,22 @@
         `MGStage server not support movieId: ${movieInfo.movieId}, CorpName: ${movieInfo.corpName}`
       );
     let notFound = () => Promise.reject("MGStage server not found movie.");
-    //Need ladder
+
     let keyword = isUseTitle ? movieInfo.titleKeyPhrase : movieInfo.movieId;
+
+    if (isUseThumbnail && movieInfo.thumbnailURL?.includes("image.mgstage.com")) {
+      //extract keyword from thumbnail
+      //example: https://image.mgstage.com/images/hmp/002aidv/0003/cap_e_1_002aidv-0003.jpg
+      //result keyword: 002aidv-0003
+      let keywordFromThumbnail = movieInfo.thumbnailURL
+        .match(new RegExp(`([\\da-zA-Z]*?${movieInfo.movieId})`, "i"))
+        ?.at(1);
+      if (keywordFromThumbnail) {
+        keyword = keywordFromThumbnail;
+      }
+    }
+
+    //Need ladder
     let serverURL = `https://www.mgstage.com/search/cSearch.php?search_word=${keyword}&list_cnt=30`;
     log("MGStage server query:\r\n" + serverURL);
     return await xFetch(serverURL)
@@ -966,7 +995,7 @@
       return Promise.reject(
         `TokyoHot server not support movieId: ${movieInfo.movieId}, CorpName: ${movieInfo.corpName}`
       );
-    let notFound = Promise.reject("TokyoHot server not found movie.");
+    let notFound = () => Promise.reject("TokyoHot server not found movie.");
     //Need ladder
     let serverURL = `https://my.cdn.tokyo-hot.com/product/?q=${movieInfo.movieId}`;
     log("TokyoHot server query:\r\n" + serverURL);
@@ -982,9 +1011,9 @@
             break;
           }
         }
-        if (!targetMovieEle) return notFound;
+        if (!targetMovieEle) return notFound();
         let avDetailPathName = targetMovieEle.querySelector(".rm")?.pathname;
-        if (!avDetailPathName) return notFound;
+        if (!avDetailPathName) return notFound();
         return xFetch("https://my.cdn.tokyo-hot.com/" + avDetailPathName);
       })
       .then((resp) => {
@@ -995,7 +1024,7 @@
           log("Tokyo server result video url: " + videoSource.src);
           return videoSource.src;
         }
-        return notFound;
+        return notFound();
       })
       .catch((e) => {
         return Promise.reject(e);
@@ -1010,12 +1039,44 @@
     return await xFetch(videoSource, { method: "head" })
       .then((resp) => {
         if (resp?.status === 200) {
-          log("The video source URL validate successful. Video source: " + videoSource);
+          log(
+            "The video source URL in local cache validate successful. Video source: " +
+              videoSource
+          );
           return Promise.resolve(videoSource);
         }
         //If validation fails,remove the url from the local cache.
         GM_deleteValue(movieInfo.movieId);
         return Promise.reject("The video source URL validate failed. Not found movie.");
+      })
+      .catch((e) => {
+        return Promise.reject(e);
+      });
+  }
+
+  async function queryCF(movieInfo) {
+    if (movieInfo.isUncensored)
+      return Promise.reject("CF server not support uncensored movie.");
+    if (movieInfo.thumbnailURL?.includes("mgstage.com"))
+      return Promise.reject("CF server not support MGStage movie.");
+
+    let notFound = () => Promise.reject("CF server not found movie.");
+    let serverURL = `https://jav-trailer.breakwall9987.workers.dev/`;
+
+    return await xFetch(serverURL, {
+      data: JSON.stringify({
+        movieId: movieInfo.movieId,
+        title: movieInfo.title,
+        titleKeyPhrase: movieInfo.titleKeyPhrase,
+      }),
+      method: "POST",
+    })
+      .then((resp) => {
+        if (resp?.status !== 200) return notFound();
+        let videoURL = resp.responseText;
+        if (!videoURL) return notFound();
+        log("CF server result video url: " + videoURL);
+        return videoURL;
       })
       .catch((e) => {
         return Promise.reject(e);
