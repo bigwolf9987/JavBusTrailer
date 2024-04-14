@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JAVBUS影片预告
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.6
 // @description  JAVBUS自动显示预告片
 // @author       A9
 // @supportURL   https://sleazyfork.org/zh-CN/scripts/450740/feedback
@@ -31,6 +31,7 @@
 // @connect      1pondo.tv
 // @connect      cloudfront.net
 // @connect      workers.dev
+// @connect      supabase.co
 // @icon         data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABFElEQVQ4ja2TMU4CQRSGvzfuKkQ2bqORRpKNV6CjIaGgovQK1LRs7R24AoECbrAHWE7glhQkJO4SEgt1GQsCBhmG1fjKee//8v/zZiSGJ+AZeOR3lQChxPDyB/EeIjFo28SuKSf6jk0sjoPXaHDh+6yjiDzLjmaUDaDKZe77fR4GAy5rNaNVK2DnQlwXEXOIs4Bz9f8AU85TG4CfW1AKv93mul7ndTjkfT4HETSgN5sCAK256XS47XZRlQrrKOIqCMjTlDxNjU7UoV6TTSZ8Lpfc9XoEoxFutUo6HvOxWBgdHL1EcRy8ZhOv1UKVSrzNZmTTKflqVQwA2wOBbX6trZeo2P6qQ+p3JqsYSBQQmiAFKgHCL3I+UIXeDJynAAAAAElFTkSuQmCC
 // @require      https://fastly.jsdelivr.net/npm/video.js@7.10.2/dist/video.min.js
 // @require      https://fastly.jsdelivr.net/npm/videojs-vr@1.10.1/dist/videojs-vr.min.js
@@ -462,6 +463,10 @@
       .catch((e) => {
         log(e);
         return queryCF(movieInfo);
+      })
+      .catch((e) => {
+        log(e);
+        return querySupaBase(movieInfo);
       })
       .catch((e) => {
         log(e);
@@ -1082,7 +1087,37 @@
         return Promise.reject(e);
       });
   }
+  async function querySupaBase(movieInfo) {
+    if (movieInfo.isUncensored)
+      return Promise.reject("Supabase server not support uncensored movie.");
+    if (movieInfo.thumbnailURL?.includes("mgstage.com"))
+      return Promise.reject("Supabase server not support MGStage movie.");
 
+    let notFound = () => Promise.reject("Supabase server not found movie.");
+    let serverURL = `https://pfragrqdbelauwiavsme.supabase.co/functions/v1/jav-trailer`;
+
+    return await xFetch(serverURL, {
+      data: JSON.stringify({
+        movieId: movieInfo.movieId,
+        title: movieInfo.title,
+        titleKeyPhrase: movieInfo.titleKeyPhrase,
+      }),
+      method: "POST",
+      headers: {
+        "x-region": `ap-northeast-${Date.now() % 2 ? "1" : "2"}`,
+      },
+    })
+      .then((resp) => {
+        if (resp?.status !== 200) return notFound();
+        let videoURL = resp.responseText;
+        if (!videoURL) return notFound();
+        log("Supabase server result video url: " + videoURL);
+        return videoURL;
+      })
+      .catch((e) => {
+        return Promise.reject(e);
+      });
+  }
   //#region utility functions
 
   async function xFetch(url, fetchInit = {}) {
