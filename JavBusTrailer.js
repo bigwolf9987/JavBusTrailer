@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JAVBUS影片预告
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      1.8
 // @description  JAVBUS自动显示预告片
 // @author       A9
 // @supportURL   https://sleazyfork.org/zh-CN/scripts/450740/feedback
@@ -32,6 +32,8 @@
 // @connect      cloudfront.net
 // @connect      workers.dev
 // @connect      supabase.co
+// @connect      xcity.jp
+// @connect      obox.jp
 // @icon         data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABFElEQVQ4ja2TMU4CQRSGvzfuKkQ2bqORRpKNV6CjIaGgovQK1LRs7R24AoECbrAHWE7glhQkJO4SEgt1GQsCBhmG1fjKee//8v/zZiSGJ+AZeOR3lQChxPDyB/EeIjFo28SuKSf6jk0sjoPXaHDh+6yjiDzLjmaUDaDKZe77fR4GAy5rNaNVK2DnQlwXEXOIs4Bz9f8AU85TG4CfW1AKv93mul7ndTjkfT4HETSgN5sCAK256XS47XZRlQrrKOIqCMjTlDxNjU7UoV6TTSZ8Lpfc9XoEoxFutUo6HvOxWBgdHL1EcRy8ZhOv1UKVSrzNZmTTKflqVQwA2wOBbX6trZeo2P6qQ+p3JqsYSBQQmiAFKgHCL3I+UIXeDJynAAAAAElFTkSuQmCC
 // @require      https://fastly.jsdelivr.net/npm/video.js@7.10.2/dist/video.min.js
 // @require      https://fastly.jsdelivr.net/npm/videojs-vr@1.10.1/dist/videojs-vr.min.js
@@ -487,6 +489,10 @@
         log(e);
         //retry query (use movie title as keyword)
         return queryMGStageVideoURL(movieInfo, true);
+      })
+      .catch((e) => {
+        log(e);
+        return queryXCityVideoURL(movieInfo);
       })
       .catch((e) => {
         log(e);
@@ -1091,7 +1097,10 @@
       data: JSON.stringify({
         movieId: movieInfo.movieId,
         title: movieInfo.title,
-        titleKeyPhrase: movieInfo.titleKeyPhrase,
+        corpName: movieInfo.corpName,
+        isVR: movieInfo.isVR,
+        isUncensored: movieInfo.isUncensored,
+        thumbnailURL: movieInfo.thumbnailURL,
       }),
       method: "POST",
     })
@@ -1135,6 +1144,67 @@
         return Promise.reject(e);
       });
   }
+
+  async function queryXCityVideoURL(movieInfo, isUseTitle = false) {
+    if (movieInfo.isUncensored)
+      return Promise.reject(
+        `XCity server not support movieId: ${movieInfo.movieId}, CorpName: ${movieInfo.corpName}`
+      );
+    let notFound = () => Promise.reject("XCity server not found movie.");
+
+    let keyword = isUseTitle
+      ? movieInfo.titleKeyPhrase
+      : movieInfo.movieId.replaceAll("-", "");
+    //Need ladder
+    let serverURL = `https://xcity.jp/result_published/?genre=%2Fresult_published%2F&q=${keyword}&sg=main&num=30`;
+    log("XCity server query:\r\n" + serverURL);
+    const headers = {
+      "accept-language": "ja-JP",
+      cookie: "pagenum=30;",
+      Referer:
+        "https://xcity.jp/result_published/?genre=%2Fresult_published%2F&q=XCITY%E3%82%AA%E3%83%AA%E3%82%B8%E3%83%8A%E3%83%AB&sg=main&num=30",
+      "Sec-Fetch-Site": "same-origin",
+    };
+    return await xFetch(serverURL, {
+      headers: headers,
+    })
+      .then((resp) => {
+        //XCity search result, may contain multiple movies.
+        let resultMovies = resp.responseText?.match(
+          /<td>\s*?(<a href="\S*?id=\S*?">.*?<\/a>)\s*?<\/td>/gs
+        );
+        if (!resultMovies) return notFound();
+        let targetMovieEle = null;
+        for (const element of resultMovies) {
+          const innerText = element.match(/">(.*?)<\/a>/s)?.at(1);
+          if (matchMovieByKeyword(innerText, movieInfo)) {
+            targetMovieEle = element;
+            break;
+          }
+        }
+        if (!targetMovieEle) return notFound();
+        let avDetailURL = targetMovieEle.match(/href="(\S*?)"/s)?.at(1);
+        if (!avDetailURL) return notFound();
+        return xFetch(`https://xcity.jp${avDetailURL}`, {
+          headers: headers,
+        });
+      })
+      .then((avDetailResp) => {
+        //XCity movie detail page result.
+        let videoURL = avDetailResp.responseText
+          ?.match(/name="src" value="(\S*?)"/s)
+          ?.at(1);
+        if (videoURL) {
+          log("XCity server result video url: " + videoURL);
+          return videoURL;
+        }
+        return notFound();
+      })
+      .catch((e) => {
+        return Promise.reject(e);
+      });
+  }
+
   //#region utility functions
 
   async function xFetch(url, fetchInit = {}) {
@@ -1207,13 +1277,20 @@
   }
 
   function matchMovieByKeyword(str, movieInfo) {
-    if (str.indexOf(movieInfo.movieId) != -1 || str.indexOf(movieInfo.title) != -1) {
+    const st1 = str.toLowerCase();
+    const titleKeyPhrase = movieInfo.titleKeyPhrase.toLowerCase();
+    const movieId = movieInfo.movieId.toLowerCase();
+    const title = movieInfo.title.toLowerCase();
+    if (st1.indexOf(movieId) != -1 || st1.indexOf(title) != -1) {
       return true;
     }
-    if (str.indexOf(movieInfo.titleKeyPhrase) != -1) {
+    if (jaroWinklerDistance(title, st1) >= 0.86) {
       return true;
     }
-    if (findDifference(movieInfo.titleKeyPhrase, removeWhitespace(str)).length < 4) {
+    if (st1.indexOf(titleKeyPhrase) != -1) {
+      return true;
+    }
+    if (findDifference(titleKeyPhrase, removeWhitespace(st1)).length < 4) {
       return true;
     }
     return false;
@@ -1245,6 +1322,76 @@
 
   function removeWhitespace(str) {
     return str.replace(/\s/g, "");
+  }
+
+  //Jaro-Winkler算法是一种专门用于计算短字符串相似度的算法,对于拼写错误更加容忍
+  //返回值在0到1之间,值越大表示两个字符串越相似。
+  function jaroWinklerDistance(str1, str2) {
+    const m = str1.length;
+    const n = str2.length;
+
+    if (m === 0 || n === 0) {
+      return 0;
+    }
+
+    const maxDistance = Math.floor(Math.max(m, n) / 2) - 1;
+    let match = 0;
+    const str1Matched = Array(m).fill(false);
+    const str2Matched = Array(n).fill(false);
+
+    // 计算匹配字符数
+    for (let i = 0; i < m; i++) {
+      const start = Math.max(0, i - maxDistance);
+      const end = Math.min(i + maxDistance + 1, n);
+
+      for (let j = start; j < end; j++) {
+        if (str2Matched[j] === false && str1[i] === str2[j]) {
+          str1Matched[i] = true;
+          str2Matched[j] = true;
+          match++;
+          break;
+        }
+      }
+    }
+
+    if (match === 0) {
+      return 0;
+    }
+
+    // 计算字符串的传输
+    let t = 0;
+    let point = 0;
+    for (let i = 0; i < m; i++) {
+      if (str1Matched[i]) {
+        while (str2Matched[point] === false) {
+          point++;
+        }
+        if (str1[i] !== str2[point]) {
+          t++;
+        }
+        point++;
+      }
+    }
+
+    t /= 2;
+
+    // 计算Jaro-Winkler距离
+    const jaroDistance = (match / m + match / n + (match - t) / match) / 3;
+
+    // 如果两个字符串前缀相同,增加前缀分数
+    let prefixLength = 0;
+    for (let i = 0; i < Math.min(m, n); i++) {
+      if (str1[i] === str2[i]) {
+        prefixLength++;
+      } else {
+        break;
+      }
+    }
+    prefixLength = Math.min(4, prefixLength);
+
+    const jaro_winkler = jaroDistance + 0.1 * prefixLength * (1 - jaroDistance);
+
+    return jaro_winkler;
   }
   //#endregion
 })();
