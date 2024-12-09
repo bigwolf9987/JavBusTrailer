@@ -147,6 +147,50 @@
       authorLink = document.querySelector(".authi.mb5 .au")?.href;
     }
 
+    //帖子列表页
+    if (PAGE_MOD === "forumdisplay") {
+      const styleSheets = document.styleSheets;
+      let post_infolist_tit_img;
+      //遍历样式表，找出控制预览图的rule
+      for (let i = 0; i < styleSheets.length; i++) {
+        const styleSheet = styleSheets[i];
+        const rules = styleSheet.cssRules || styleSheet.rules;
+        if (!rules) continue;
+        for (let j = 0; j < rules.length; j++) {
+          const rule = rules[j];
+          if (rule.selectorText === "#threadlist .post_infolist_tit img") {
+            post_infolist_tit_img = rule;
+          }
+        }
+      }
+      if (!post_infolist_tit_img) return;
+
+      //在顶部导航栏的右侧增加一个隐藏预览图的按钮
+      let navBar = document.querySelector(isForum ? "#toptb" : "#navbar");
+      let togglePostPreviewImg = document.createElement("a");
+      togglePostPreviewImg.href = "javascript:void(0)";
+      togglePostPreviewImg.innerText = "隐藏预览图";
+      togglePostPreviewImg.className = "nav navbar-nav navbar-right";
+      togglePostPreviewImg.style.cssText = `
+        display: block;
+        padding: 11px;
+        color: rgb(119, 119, 119);
+        float: right;
+        font-size: 14px;
+      `;
+
+      togglePostPreviewImg.addEventListener("click", () => {
+        if (togglePostPreviewImg.innerText === "隐藏预览图") {
+          togglePostPreviewImg.innerText = "显示预览图";
+          post_infolist_tit_img.style.display = "none";
+        } else {
+          togglePostPreviewImg.innerText = "隐藏预览图";
+          post_infolist_tit_img.style.display = "inline";
+        }
+      });
+      navBar?.append(togglePostPreviewImg);
+    }
+
     //将当前页面添加到已加载过的页面集合中
     loadedURLSet = new Set([window.location.href]);
   }

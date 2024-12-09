@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JAVBUS影片预告
 // @namespace    http://tampermonkey.net/
-// @version      1.8
+// @version      1.8.1
 // @description  JAVBUS自动显示预告片
 // @author       A9
 // @supportURL   https://sleazyfork.org/zh-CN/scripts/450740/feedback
@@ -521,7 +521,7 @@
       .catch((e) => {
         log(e);
       });
-    return convertHTTPToHTTPS(videoURL);
+    return replaceDMMHost(convertHTTPToHTTPS(videoURL));
   }
 
   async function queryBasicUncensoredVideoURL(movieInfo) {
@@ -1254,6 +1254,10 @@
       return url.replace("http:", "https:");
     }
     return url;
+  }
+
+  function replaceDMMHost(url){
+    return url?.replace("cc3001.dmm.co.jp","pv3001.dmm.com");
   }
 
   function extractDMMMovieItem(text) {
