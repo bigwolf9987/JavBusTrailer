@@ -1257,7 +1257,7 @@
   }
 
   function replaceDMMHost(url){
-    return url?.replace("cc3001.dmm.co.jp","pv3001.dmm.com");
+    return url?.replace("pv3001.dmm.com","cc3001.dmm.co.jp");
   }
 
   function extractDMMMovieItem(text) {
