@@ -7,6 +7,8 @@ JAVBUS影片预告
 
 [脚本发布地址](https://sleazyfork.org/zh-CN/scripts/450740-javbus%E5%BD%B1%E7%89%87%E9%A2%84%E5%91%8A)
 
+[✋代理分流设置方法](https://github.com/bigwolf9987/JavBusTrailer/wiki/%E4%BB%A3%E7%90%86%E5%88%86%E6%B5%81%E8%AE%BE%E7%BD%AE%E6%96%B9%E6%B3%95)
+
 备注：
 
 本脚本是基于 @ibabij 作者的 [JAVBUS预告片](https://sleazyfork.org/zh-CN/scripts/434185-javbus%E9%A2%84%E5%91%8A%E7%89%87) 脚本修改，由于原脚本调用的解析服务接口失效了，遂基于原脚本做了一些微不足道的改进。
