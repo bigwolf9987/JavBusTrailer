@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         JAVBUS影片预告
 // @namespace    http://tampermonkey.net/
-// @version      1.8.2
+// @version      1.9
 // @description  JAVBUS自动显示预告片
 // @author       A9
 // @supportURL   https://sleazyfork.org/zh-CN/scripts/450740/feedback
@@ -34,11 +34,17 @@
 // @connect      supabase.co
 // @connect      xcity.jp
 // @connect      obox.jp
+// @connect      cdn.faleno.net
+// @connect      faleno.jp
+// @connect      falenogroup.com
+// @connect      dahlia-av.jp
 // @icon         data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABFElEQVQ4ja2TMU4CQRSGvzfuKkQ2bqORRpKNV6CjIaGgovQK1LRs7R24AoECbrAHWE7glhQkJO4SEgt1GQsCBhmG1fjKee//8v/zZiSGJ+AZeOR3lQChxPDyB/EeIjFo28SuKSf6jk0sjoPXaHDh+6yjiDzLjmaUDaDKZe77fR4GAy5rNaNVK2DnQlwXEXOIs4Bz9f8AU85TG4CfW1AKv93mul7ndTjkfT4HETSgN5sCAK256XS47XZRlQrrKOIqCMjTlDxNjU7UoV6TTSZ8Lpfc9XoEoxFutUo6HvOxWBgdHL1EcRy8ZhOv1UKVSrzNZmTTKflqVQwA2wOBbX6trZeo2P6qQ+p3JqsYSBQQmiAFKgHCL3I+UIXeDJynAAAAAElFTkSuQmCC
-// @require      https://fastly.jsdelivr.net/npm/video.js@7.10.2/dist/video.min.js
+// @require      https://fastly.jsdelivr.net/npm/video.js@8.22.0/dist/video.min.js
 // @require      https://fastly.jsdelivr.net/npm/videojs-vr@1.10.1/dist/videojs-vr.min.js
-// @resource     video-js-css https://fastly.jsdelivr.net/npm/video.js@7.10.2/dist/video-js.min.css
+// @require      https://fastly.jsdelivr.net/npm/videojs-contrib-quality-menu@1.0.3/dist/videojs-contrib-quality-menu.min.js
+// @resource     video-js-css https://fastly.jsdelivr.net/npm/video.js@8.22.0/dist/video-js.min.css
 // @resource     video-vr-js-css https://fastly.jsdelivr.net/npm/videojs-vr@1.10.1/dist/videojs-vr.css
+// @resource     video-js-quality-menu-css https://fastly.jsdelivr.net/npm/videojs-contrib-quality-menu@1.0.3/dist/videojs-contrib-quality-menu.css
 // @license      MIT
 // @downloadURL https://update.sleazyfork.org/scripts/450740/JAVBUS%E5%BD%B1%E7%89%87%E9%A2%84%E5%91%8A.user.js
 // @updateURL https://update.sleazyfork.org/scripts/450740/JAVBUS%E5%BD%B1%E7%89%87%E9%A2%84%E5%91%8A.meta.js
@@ -53,7 +59,7 @@
     enable_mute_play: 0, //是否开启静音播放，0 关闭；1 开启 （注：跨域页面无效，需手动控制播放与音量）
     video_playback_speed: 1.0, //视频默认播放速度，建议设置范围 0.25～2.0（注：数值越大播放速度越快）
     enable_debug_mode: 0,
-    video_quality: 720, //视频清晰度,可设置为下列值之一：1080；720；480；360；240；144；（注：数值越大越清晰，所需网络加载时间越长）
+    video_quality: 576, //视频默认清晰度，仅可设置为下列值之一：2160；1080；720；576；432；288；144；（注：数值越大越清晰，加载时间越长，流量消耗越高）
   };
   const corporations = {
     stars: ["1"],
@@ -220,6 +226,8 @@
     let title = document.querySelector(".bigImage img")?.title;
     let thumbnailURL = document.querySelector(".sample-box")?.href;
     let titleKeyPhrase = getKeyPhrase(title);
+    //remove unnecessary characters
+    titleKeyPhrase = getKeyPhrase(titleKeyPhrase, "●");
     //retry extract
     if (titleKeyPhrase === title) titleKeyPhrase = getKeyPhrase(title, "！！");
 
@@ -308,6 +316,7 @@
     GM_addStyle(containerStyle);
     GM_addStyle(GM_getResourceText("video-js-css"));
     GM_addStyle(GM_getResourceText("video-vr-js-css"));
+    GM_addStyle(GM_getResourceText("video-js-quality-menu-css"));
   }
 
   /**
@@ -404,6 +413,7 @@
         player.tech(false); //tech() will log warning without any argument
       }
       player.defaultPlaybackRate(settings.video_playback_speed);
+      player.qualityMenu({ defaultResolution: settings.video_quality });
     } else {
       player = document.querySelector("#preview-video-player");
       player.playbackRate = settings.video_playback_speed;
@@ -452,75 +462,36 @@
   }
 
   async function getVideoURL(movieInfo) {
-    let videoURL = await queryLocalCacheDB(movieInfo)
-      .catch((e) => {
+    const queryFunctions = [
+      (info) => queryLocalCacheDB(info),
+      (info) => querySupaBase(info),
+      (info) => queryCF(info),
+      (info) => queryDMMVideoURL(info, undefined, false, "mhb"),
+      (info) => queryDMMVideoURL(info),
+      (info) => queryDMMVideoURL(info, undefined, true),
+      (info) => queryPrestigeVideoURL(info),
+      (info) => queryMGStageVideoURL(info),
+      (info) => queryMGStageVideoURL(info, false, true),
+      (info) => queryMGStageVideoURL(info, true), // retry with movie title
+      (info) => queryFalenoVideoURL(info),
+      (info) => queryXCityVideoURL(info),
+      (info) => queryBasicUncensoredVideoURL(info),
+      (info) => queryTokyoHotVideoURL(info),
+      (info) => queryAVFantasyVideoURL(info),
+      (info) => queryAVFantasyVideoURL(info, true),
+      (info) => queryJavSpylVideoURL(info),
+      // (info) => queryJavDBVideoURL(info),
+    ];
+    let videoURL = null;
+
+    for (const queryFn of queryFunctions) {
+      try {
+        videoURL = await queryFn(movieInfo);
+        if (videoURL) break;
+      } catch (e) {
         log(e);
-        return querySupaBase(movieInfo);
-      })
-      .catch((e) => {
-        log(e);
-        return queryCF(movieInfo);
-      })
-      .catch((e) => {
-        log(e);
-        return queryDMMVideoURL(movieInfo, undefined, false, "mhb");
-      })
-      .catch((e) => {
-        log(e);
-        return queryDMMVideoURL(movieInfo);
-      })
-      .catch((e) => {
-        log(e);
-        return queryDMMVideoURL(movieInfo, undefined, true);
-      })
-      .catch((e) => {
-        log(e);
-        return queryPrestigeVideoURL(movieInfo);
-      })
-      .catch((e) => {
-        log(e);
-        return queryMGStageVideoURL(movieInfo);
-      })
-      .catch((e) => {
-        log(e);
-        return queryMGStageVideoURL(movieInfo, false, true);
-      })
-      .catch((e) => {
-        log(e);
-        //retry query (use movie title as keyword)
-        return queryMGStageVideoURL(movieInfo, true);
-      })
-      .catch((e) => {
-        log(e);
-        return queryXCityVideoURL(movieInfo);
-      })
-      .catch((e) => {
-        log(e);
-        return queryBasicUncensoredVideoURL(movieInfo);
-      })
-      .catch((e) => {
-        log(e);
-        return queryTokyoHotVideoURL(movieInfo);
-      })
-      .catch((e) => {
-        log(e);
-        return queryAVFantasyVideoURL(movieInfo);
-      })
-      .catch((e) => {
-        log(e);
-        return queryAVFantasyVideoURL(movieInfo, true);
-      })
-      .catch((e) => {
-        log(e);
-        return queryJavSpylVideoURL(movieInfo);
-      })
-      // .catch((e) => {
-      //   log(e);
-      //   return queryJavDBVideoURL(movieInfo);
-      // })
-      .catch((e) => {
-        log(e);
-      });
+      }
+    }
     return replaceDMMHost(convertHTTPToHTTPS(videoURL));
   }
 
@@ -615,13 +586,13 @@
     //   return Promise.reject("JavSpyl server not support this corporation movie.");
     // }
     //see https://bit.ly/3RkgqSo
-    let serverURL = "https://api.javspyl.eu.org/api/";
+    let serverURL = "https://javspyl.eu.org/api";
     return await xFetch(serverURL, {
       headers: {
-        origin: "https://api.javspyl.eu.org",
-        "Content-Type": "application/x-www-form-urlencoded",
+        origin: "https://javspyl.eu.org",
+        "Content-Type": "application/json",
       },
-      data: `ID=${movieInfo.movieId}`,
+      data: `{ "_id": "${movieInfo.movieId}" }`,
       method: "POST",
     })
       .then((resp) => {
@@ -1019,6 +990,81 @@
       });
   }
 
+  async function queryFalenoVideoURL(movieInfo, isUseTitle = false) {
+    const falenoCorpNames = new Set([
+      "MAGNOLIA",
+      "FALENOGROUP",
+      "素人CLOVER",
+      "VERONICA",
+      "BOTAN",
+      "ノースキンズ",
+      "BONキュンBON",
+      "カミパイ",
+      "FALENO TUBE",
+      "即席シロウト",
+      "FALENO",
+      "DAHLIA",
+    ]);
+    if (
+      movieInfo.isUncensored ||
+      falenoCorpNames.has(movieInfo.corpName.toUpperCase()) === false
+    )
+      return Promise.reject(
+        `Faleno server not support movieId: ${movieInfo.movieId}, CorpName: ${movieInfo.corpName}`
+      );
+    let notFound = () => Promise.reject("Faleno server not found movie.");
+    //Need ladder
+    let serverURL;
+    if (movieInfo.corpName.toUpperCase() === "FALENO") {
+      serverURL = `https://faleno.jp/top/`;
+    } else if (movieInfo.corpName.toUpperCase() === "DAHLIA") {
+      serverURL = `https://dahlia-av.jp/`;
+    } else {
+      serverURL = `https://falenogroup.com/`;
+      isUseTitle = true;
+    }
+
+    let keyword = isUseTitle
+      ? movieInfo.titleKeyPhrase
+      : movieInfo.movieId.replaceAll("-", "").toLowerCase();
+
+    serverURL += `?s=${keyword}&post_type=作品`;
+
+    log("Faleno server query:\r\n" + serverURL);
+    const headers = {
+      "accept-language": "ja-JP",
+      cookie: "modal=off",
+      "referrer-policy": "no-referrer",
+    };
+    return await xFetch(serverURL, {
+      headers: headers,
+    })
+      .then((resp) => {
+        //Faleno search result, may contain multiple movies.
+        let resultMovies = extractFalenoMovieItem(resp.responseText);
+        if (!resultMovies) return notFound();
+        let targetMovieEle = null;
+        for (const element of resultMovies) {
+          if (matchMovieByKeyword(element, movieInfo)) {
+            targetMovieEle = element;
+            break;
+          }
+        }
+        if (!targetMovieEle) return notFound();
+        let videoURL = targetMovieEle
+          .match(/<a class="pop_sample" href="(\S*?)">/s)
+          ?.at(1);
+        if (videoURL) {
+          log("Faleno server result video url: " + videoURL);
+          return videoURL;
+        }
+        return notFound();
+      })
+      .catch((e) => {
+        return Promise.reject(e);
+      });
+  }
+
   async function queryTokyoHotVideoURL(movieInfo) {
     if (
       !movieInfo.isUncensored ||
@@ -1256,8 +1302,8 @@
     return url;
   }
 
-  function replaceDMMHost(url){
-    return url?.replace("pv3001.dmm.com","cc3001.dmm.co.jp");
+  function replaceDMMHost(url) {
+    return url?.replace("pv3001.dmm.com", "cc3001.dmm.co.jp");
   }
 
   function extractDMMMovieItem(text) {
@@ -1280,12 +1326,21 @@
     return text.match(/<div class="single-slider-product.*?>(.*?)<\/div>\s*?<\/div>/gs);
   }
 
+  function extractFalenoMovieItem(text) {
+    const matches = text.match(
+      /<div class="box_kanren01">.*?<ul class="clearfix">(.*?)<\/ul>/s
+    );
+    if (!matches) return [];
+    return matches.at(1).match(/<li>(.*?)<\/li>/gs);
+  }
+
   function matchMovieByKeyword(str, movieInfo) {
     const st1 = str.toLowerCase();
     const titleKeyPhrase = movieInfo.titleKeyPhrase.toLowerCase();
     const movieId = movieInfo.movieId.toLowerCase();
     const title = movieInfo.title.toLowerCase();
-    if (st1.indexOf(movieId) != -1 || st1.indexOf(title) != -1) {
+    const regex = new RegExp(`${movieId}|${movieId.replaceAll("-", "")}`);
+    if (regex.test(st1) || st1.indexOf(title) != -1) {
       return true;
     }
     if (jaroWinklerDistance(title, st1) >= 0.86) {
